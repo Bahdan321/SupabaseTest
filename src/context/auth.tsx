@@ -1,39 +1,61 @@
 import { useRouter, useSegments } from 'expo-router';
-import * as React from 'react';
+import { supabase } from '@/lib/supabase';
+import { Session } from '@supabase/supabase-js';
+import {
+    PropsWithChildren,
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+} from 'react';
 
-const AuthContext = React.createContext<any>(null);
+type AuthData = {
+    session: Session | null;
+    profile: any;
+    loading: boolean;
+};
 
-export function useAuth() {
-    return React.useContext(AuthContext);
-}
+const AuthContext = createContext<AuthData>({
+    session: null,
+    loading: true,
+    profile: null,
+});
 
-export function AuthProvider({ children }: React.PropsWithChildren) {
-    const rootSegment = useSegments()[0];
-    const router = useRouter()
-    const [user, setUser] = React.useState<string | undefined>("");
+export function AuthProvider({ children }: PropsWithChildren) {
+    const [session, setSession] = useState<Session | null>(null);
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
     
-    React.useEffect(() => {
-        if (user === undefined) return;
-
-        if (!user && rootSegment !== "(auth)") {
-            router.replace("/(auth)/login");
-        } else if (user && rootSegment !== "(app)") {
-            router.replace("/");
-        }
-    }, [user, rootSegment]);
+    useEffect(() => {
+        const fetchSession = async () => {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+    
+            setSession(session);
+    
+            if (session) {
+                // fetch profile
+                const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+                setProfile(data || null);
+            }
+    
+            setLoading(false);
+        };
+    
+        fetchSession();
+        supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+    }, []);
 
     return (
         <AuthContext.Provider
-            value={{
-                user:user,
-                signIn: () => {
-                    console.log("signIn");
-                    setUser("user");
-                },
-                signOut: () => {
-                    setUser(undefined);
-                }
-            }}
+            value={{ session, profile, loading}}
         >
             {children}
         </AuthContext.Provider>
